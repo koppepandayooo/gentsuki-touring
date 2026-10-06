@@ -172,12 +172,12 @@ function applyAliases() {
   for (const c of candidates) for (const L of c.legs) L.maneuvers.forEach(cleanManeuver);
   if (current) renderSheet(candidates.indexOf(current));
 }
-// 画面に出ている道路名も調べる
-map.on('moveend', () => {
+// 画面に出ている道路名も調べる（moveend の時点では文字がまだ描かれていないことがあるので、描き終わった idle で）
+map.on('idle', () => {
   if (map.getZoom() < 12 || !map.getStyle()) return;
   const c = map.getCenter();
   const names = new Set(map.queryRenderedFeatures().filter((f) => /^highway-name/.test(f.layer.id)).map((f) => f.properties['name:ja'] || f.properties.name));
-  [...names].slice(0, 10).forEach((n) => requestAlias(n, [c.lat, c.lng]));
+  [...names].filter((n) => n && /線$/.test(n)).slice(0, 10).forEach((n) => requestAlias(n, [c.lat, c.lng]));
 });
 let baseStyleSeq = 0;
 async function loadBaseStyle() {
@@ -368,8 +368,10 @@ async function searchPlaces(q, opts = {}) {
     .then((r) => r.json())
     .then((j) => j.slice(0, 4).map((f, i) => {
       const title = f.properties.title;
-      // 地理院の住所検索は「〜番」までしか返さない（号は捨てられる）。入力のほうが細かければ入力のまま表示する
-      const finer = i === 0 && /\d+\s*号|\d+\s*[-−ー－]\s*\d+\s*[-−ー－]\s*\d+|\d+番\s*\d+/.test(q.normalize('NFKC'));
+      // 地理院の住所検索は「〜番」「〜番地」までしか返さない（号・枝番は捨てられる）。
+      // 入力のほうが数字が多い（細かい）ときは、入力した住所のまま表示する
+      const nums = (t) => (t.normalize('NFKC').match(/\d+|[一二三四五六七八九十]+丁目/g) || []).length;
+      const finer = i === 0 && nums(q) > nums(title);
       return { name: finer ? q.trim() : title, detail: finer ? `住所・${title}の位置（ピンをドラッグで調整できます）` : '住所', lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] };
     }))
     .catch(() => []);
