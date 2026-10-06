@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1f2a24">
+<title>原付ツーリング</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="style.css?v=24">
+</head>
+<body>
+<div id="map"></div>
+
+<!-- 検索パネル -->
+<section id="search" class="card">
+  <div class="field">
+    <span class="dot start"></span>
+    <input id="from" placeholder="出発地（空なら現在地）" autocomplete="off" enterkeyhint="search">
+  </div>
+  <div id="vias"></div>
+  <div class="field">
+    <span class="dot goal"></span>
+    <input id="to" placeholder="目的地を検索" autocomplete="off" enterkeyhint="search">
+  </div>
+  <div class="search-actions">
+    <button id="btn-swap" class="icon-btn" title="入れ替え" aria-label="出発地と目的地を入れ替え">⇅</button>
+    <button id="btn-via" class="icon-btn" title="経由地を追加" aria-label="経由地を追加">＋経由</button>
+    <button id="btn-route" class="primary">ルート検索</button>
+  </div>
+  <ul id="suggest" hidden></ul>
+</section>
+
+<!-- 地図上のボタン -->
+<div id="fabs">
+  <button id="btn-theme" class="fab" aria-label="ライト/ダーク切り替え" title="表示: 自動/ライト/ダーク">◐</button>
+  <button id="btn-locate" class="fab" aria-label="現在地">◎</button>
+  <button id="btn-reg" class="fab" aria-label="規制区間の表示切替" title="二輪規制区間">⛔</button>
+  <button id="btn-settings" class="fab" aria-label="設定">⚙</button>
+</div>
+
+<!-- ルート結果 -->
+<section id="sheet" class="card" hidden>
+  <div id="sheet-handle"></div>
+  <div id="alts"></div>
+  <div id="summary"></div>
+  <div id="warnings"></div>
+  <div class="sheet-actions">
+    <button id="btn-steps">曲がり角一覧</button>
+    <button id="btn-nav" class="primary">ナビ開始</button>
+  </div>
+  <ol id="steps" hidden></ol>
+</section>
+
+<!-- ナビ中 -->
+<section id="nav-top" hidden>
+  <div id="nav-arrow">↑</div>
+  <div>
+    <div id="nav-dist"></div>
+    <div id="nav-text"></div>
+    <div id="nav-warn"></div>
+  </div>
+</section>
+<section id="nav-bottom" hidden>
+  <div id="nav-speed"><b>0</b><small>km/h</small></div>
+  <div id="nav-remain"></div>
+  <button id="btn-mute" class="icon-btn" aria-label="音声">🔊</button>
+  <button id="btn-nav-end" class="danger">終了</button>
+</section>
+
+<!-- 設定 -->
+<dialog id="settings">
+  <form method="dialog">
+    <h2>設定</h2>
+    <label>表示
+      <select name="theme">
+        <option value="auto">自動（スマホの設定に合わせる）</option>
+        <option value="light">ライト</option>
+        <option value="dark">ダーク</option>
+      </select>
+    </label>
+    <label>車種
+      <select name="vehicle">
+        <option value="1">原付一種（〜50cc / 新基準原付）</option>
+        <option value="2">原付二種（〜125cc）</option>
+      </select>
+    </label>
+    <label>巡航速度 <output name="speedOut"></output> km/h
+      <input type="range" name="speed" min="20" max="60" step="5">
+    </label>
+    <label>大通り（国道など）
+      <select name="primary">
+        <option value="0.8">積極的に使う</option>
+        <option value="0.5">ふつう</option>
+        <option value="0.15">なるべく避ける（裏道寄り）</option>
+      </select>
+    </label>
+    <label>坂道
+      <select name="hills">
+        <option value="0.5">気にしない</option>
+        <option value="0.2">なるべく避ける</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" name="avoidTwoStage"> 二段階右折が少ないルートを優先（原付一種）</label>
+    <label class="check"><input type="checkbox" name="avoidReg"> 二輪通行規制区間を自動で避ける</label>
+    <label class="check"><input type="checkbox" name="voice"> 音声案内</label>
+    <p class="note">ルート: Valhalla / OpenStreetMap ・ 地図: OpenFreeMap / OpenStreetMap ・ 規制区間: 日本二輪車普及安全協会（<span id="reg-date"></span>取得）。<br>実際の標識・交通規則を優先してください。</p>
+    <button class="primary" value="ok">閉じる</button>
+  </form>
+</dialog>
+
+<div id="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="app.js?v=24"></script>
+</body>
+</html>
