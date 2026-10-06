@@ -800,9 +800,15 @@ async function planRoute(opts = {}) {
       return planRoute({ ...opts, quiet: true });
     }
     $('#toast').hidden = true;
-    selectRoute(0, !opts.keepView);
+    // QR で受け取ったときは、パソコンで選んでいたのと同じルート（距離と曲がる回数が近いもの）を選ぶ
+    const pref = opts.prefer;
+    const first = pref ? candidates.reduce((bi, c, j) => {
+      const d = (x) => Math.abs(x.trip.summary.length - pref.len) + 0.3 * Math.abs(x.turns - pref.turns);
+      return d(c) < d(candidates[bi]) ? j : bi;
+    }, 0) : 0;
+    selectRoute(first, !opts.keepView);
     // まず結果を出してから、二段階右折の少ないルートを裏で探す（ナビ中の再検索ではやらない）
-    if (avoidTwo && !opts.quiet && candidates[0].twoStage.length) {
+    if (avoidTwo && !opts.quiet && !pref && candidates[0].twoStage.length) {
       toast('二段階右折の少ないルートを探しています…', 20000);
       refine(routes).then((all) => {
         if (!all || my !== planSeq || nav.on) return;
@@ -1173,6 +1179,78 @@ async function reroute(p) {
   nav.rerouting = false;
 }
 
+// ===== スマホに送る（QR） =====
+// パソコンで決めた地点・設定を URL（#r=…）に詰めて QR コードにする。アカウントもサーバーも不要。
+// スマホは同じ条件でルートを出し直す（ルートの線そのものは大きすぎて QR に入らないため）
+const SHARE_KEYS = ['vehicle', 'speed', 'primary', 'hills', 'turns', 'avoidReg', 'avoidTwoStage'];
+const packPlace = (p) => p && { n: p.name, a: +p.lat.toFixed(6), o: +p.lon.toFixed(6), ...(p.noVehicle ? { nv: 1 } : {}), ...(p.publicOnly ? { po: 1 } : {}) };
+const unpackPlace = (p) => p && { name: p.n, lat: p.a, lon: p.o, ...(p.nv ? { noVehicle: true } : {}), ...(p.po ? { publicOnly: true } : {}) };
+const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64url = (t) => Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+const pipeBytes = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+
+async function shareUrl() {
+  const data = {
+    v: 1, f: packPlace(places.from), w: places.vias.filter(Boolean).map(packPlace), t: packPlace(places.to),
+    s: Object.fromEntries(SHARE_KEYS.map((k) => [k, settings[k]])), x: excluded,
+    k: current && { len: +current.trip.summary.length.toFixed(2), turns: current.turns },
+  };
+  let bytes = new TextEncoder().encode(JSON.stringify(data)), tag = 'j';
+  // 縮めると QR が細かくなりすぎず読み取りやすい（古いブラウザはそのまま）
+  if ('CompressionStream' in window) { bytes = await pipeBytes(bytes, new CompressionStream('deflate-raw')); tag = 'z'; }
+  return location.origin + location.pathname + '#r=' + tag + b64url(bytes);
+}
+
+let qrLib = null;
+const loadQr = () => qrLib ??= new Promise((res, rej) => {
+  const sc = el('script', { src: 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js' });
+  sc.onload = () => res(window.qrcode); sc.onerror = () => { qrLib = null; rej(new Error('QR')); };
+  document.head.append(sc);
+});
+
+$('#btn-share').onclick = async () => {
+  if (!places.to) return;
+  const url = await shareUrl();
+  $('#share-url').value = url;
+  $('#qr').replaceChildren();
+  $('#share').showModal();
+  try {
+    const qr = (await loadQr())(0, 'L'); // 0 = 大きさは自動
+    qr.addData(url); qr.make();
+    $('#qr').append(el('img', { src: qr.createDataURL(4, 2), alt: 'ルートの QR コード' }));
+  } catch { $('#qr').textContent = 'QR コードを作れませんでした。下のリンクをコピーして送ってください'; }
+};
+$('#btn-copy').onclick = async (e) => {
+  e.preventDefault();
+  try { await navigator.clipboard.writeText($('#share-url').value); toast('リンクをコピーしました'); }
+  catch { $('#share-url').select(); }
+};
+
+// QR から開いたとき: 地点と設定を入れてルートを出す
+async function receiveShared() {
+  const m = location.hash.match(/^#r=([jz])(.+)$/);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search); // 再読み込みでまた読まないように
+  let data;
+  try {
+    let bytes = unb64url(m[2]);
+    if (m[1] === 'z') bytes = await pipeBytes(bytes, new DecompressionStream('deflate-raw'));
+    data = JSON.parse(new TextDecoder().decode(bytes));
+  } catch { return toast('受け取ったルートを読めませんでした', 4000); }
+  for (const k of SHARE_KEYS) if (k in data.s) settings[k] = data.s[k];
+  save('settings', settings);
+  drawRegulations();
+  setPlace('from', unpackPlace(data.f), $('#from'));
+  for (const v of data.w || []) addViaField(unpackPlace(v));
+  setPlace('to', unpackPlace(data.t), $('#to'));
+  excluded = data.x || [];
+  const go = () => planRoute({ prefer: data.k });
+  toast('パソコンから受け取ったルートを出しています…', 10000);
+  // 出発地が空 = 現在地から。スマホの現在地が取れるのを待つ
+  if (places.from || me) go();
+  else onPosition.push(function once() { setTimeout(() => onPosition.splice(onPosition.indexOf(once), 1)); go(); });
+}
+
 // ===== 設定ダイアログ =====
 const dlg = $('#settings');
 const form = dlg.querySelector('form');
@@ -1204,6 +1282,8 @@ dlg.addEventListener('close', () => {
   }
 });
 $('#btn-mute').textContent = settings.voice ? '🔊' : '🔇';
+
+receiveShared();
 
 // ===== PWA =====
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
