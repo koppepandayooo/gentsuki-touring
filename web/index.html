@@ -9,7 +9,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=24">
+<link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
 <div id="map"></div>
@@ -49,6 +49,7 @@
   <div id="warnings"></div>
   <div class="sheet-actions">
     <button id="btn-steps">曲がり角一覧</button>
+    <button id="btn-share">📱 スマホに送る</button>
     <button id="btn-nav" class="primary">ナビ開始</button>
   </div>
   <ol id="steps" hidden></ol>
@@ -97,6 +98,13 @@
         <option value="0.15">なるべく避ける（裏道寄り）</option>
       </select>
     </label>
+    <label>曲がる回数
+      <select name="turns">
+        <option value="0">気にしない（いちばん早いルート）</option>
+        <option value="60">少なめ（1回あたり1分遅くてもOK）</option>
+        <option value="180">なるべく直進（1回あたり3分遅くてもOK）</option>
+      </select>
+    </label>
     <label>坂道
       <select name="hills">
         <option value="0.5">気にしない</option>
@@ -111,9 +119,20 @@
   </form>
 </dialog>
 
+<!-- スマホに送る -->
+<dialog id="share">
+  <form method="dialog">
+    <h2>スマホに送る</h2>
+    <p class="note">スマホのカメラで読み取ると、同じ出発地・経由地・目的地・設定でルートが開きます（出発地が「現在地」ならスマホの現在地から）。</p>
+    <div id="qr"></div>
+    <div class="share-row"><input id="share-url" readonly><button id="btn-copy" type="button">コピー</button></div>
+    <button class="primary" value="ok">閉じる</button>
+  </form>
+</dialog>
+
 <div id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="app.js?v=24"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>
