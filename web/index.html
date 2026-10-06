@@ -9,7 +9,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=24">
+<link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
 <div id="map"></div>
@@ -97,6 +97,13 @@
         <option value="0.15">なるべく避ける（裏道寄り）</option>
       </select>
     </label>
+    <label>曲がる回数
+      <select name="turns">
+        <option value="0">気にしない（いちばん早いルート）</option>
+        <option value="60">少なめ（1回あたり1分遅くてもOK）</option>
+        <option value="180">なるべく直進（1回あたり3分遅くてもOK）</option>
+      </select>
+    </label>
     <label>坂道
       <select name="hills">
         <option value="0.5">気にしない</option>
@@ -114,6 +121,6 @@
 <div id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="app.js?v=24"></script>
+<script src="app.js?v=25"></script>
 </body>
 </html>

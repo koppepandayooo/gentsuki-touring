@@ -7,7 +7,7 @@ const GSI_SEARCH = 'https://msearch.gsi.go.jp/address-search/AddressSearch';
 const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse';
 
 // ===== 設定 =====
-const DEFAULTS = { theme: 'auto', vehicle: '1', speed: 30, primary: '0.5', hills: '0.5', avoidReg: true, avoidTwoStage: true, voice: true, showReg: true };
+const DEFAULTS = { theme: 'auto', vehicle: '1', speed: 30, primary: '0.5', hills: '0.5', turns: '0', avoidReg: true, avoidTwoStage: true, voice: true, showReg: true };
 const settings = Object.assign({}, DEFAULTS, load('settings', {}));
 function load(k, d) { try { return JSON.parse(localStorage.getItem('gt.' + k)) ?? d; } catch { return d; } }
 function save(k, v) { try { localStorage.setItem('gt.' + k, JSON.stringify(v)); } catch {} }
@@ -293,7 +293,18 @@ let pinMarkers = [];
 function drawPins() {
   pinMarkers.forEach((m) => m.remove());
   pinMarkers = [];
-  const pin = (p, color) => p && pinMarkers.push(htmlMarker(`<div class="pin" style="background:${color}"></div>`, [p.lat, p.lon]));
+  // ドラッグで位置を細かく直せる（住所検索は「〜番」までなので）
+  const pin = (p, color) => {
+    if (!p) return;
+    const m = htmlMarker(`<div class="pin" style="background:${color}"></div>`, [p.lat, p.lon], { draggable: true });
+    m.on('dragend', () => {
+      const { lat, lng } = m.getLngLat();
+      Object.assign(p, { lat, lon: lng });
+      delete p.noVehicle; delete p.publicOnly; // 自分で決めた位置なので、そのまま目指す
+      if (places.to && !nav.on) planRoute({ keepView: true });
+    });
+    pinMarkers.push(m);
+  };
   pin(places.from, '#1e88e5');
   places.vias.forEach((v) => pin(v, '#8e8e8e'));
   pin(places.to, '#c62828');
@@ -360,7 +371,12 @@ async function searchPlaces(q, opts = {}) {
   const photon = Promise.all([station, photonQuery(q)]).then(([st, all]) => [...st, ...all]);
   const gsi = fetch(`${GSI_SEARCH}?q=${encodeURIComponent(q)}`)
     .then((r) => r.json())
-    .then((j) => j.slice(0, 4).map((f) => ({ name: f.properties.title, detail: '住所', lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] })))
+    .then((j) => j.slice(0, 4).map((f, i) => {
+      const title = f.properties.title;
+      // 地理院の住所検索は「〜番」までしか返さない（号は捨てられる）。入力のほうが細かければ入力のまま表示する
+      const finer = i === 0 && /\d+\s*号|\d+\s*[-−ー－]\s*\d+\s*[-−ー－]\s*\d+|\d+番\s*\d+/.test(q.normalize('NFKC'));
+      return { name: finer ? q.trim() : title, detail: finer ? `住所・${title}の位置（ピンをドラッグで調整できます）` : '住所', lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] };
+    }))
     .catch(() => []);
   const [a, b] = await Promise.all([photon, gsi]);
   const spots = opts.noFallback ? [] : matchSpots(q);
@@ -696,7 +712,7 @@ function routeRequest(locs, exclude, variant = {}) {
       ...(i > 0 && (p.noVehicle || p.publicOnly) ? { search_filter: { exclude_tunnel: !!p.noVehicle, ...(p.publicOnly ? { min_road_class: 'residential' } : {}) } } : {}),
     })),
     costing: 'motor_scooter',
-    costing_options: { motor_scooter: { top_speed: speed, use_primary: variant.use_primary ?? +settings.primary, use_hills: +settings.hills, use_ferry: 0.3 } },
+    costing_options: { motor_scooter: { top_speed: speed, use_primary: variant.use_primary ?? +settings.primary, ...(variant.maneuver_penalty ? { maneuver_penalty: variant.maneuver_penalty } : {}), use_hills: +settings.hills, use_ferry: 0.3 } },
     exclude_polygons: exclude,
     directions_options: { language: 'ja-JP', units: 'kilometers' },
     alternates: locs.length === 2 ? 2 : 0,
@@ -766,13 +782,15 @@ async function planRoute(opts = {}) {
     }
     return routes;
   };
-  // 低いほど良い: 所要時間(秒) + 二段階右折1回あたり2分 + 通行規制区間の通過は大きく減点
+  // 低いほど良い: 所要時間(秒) + 二段階右折1回あたり2分 + 曲がる回数（設定） + 通行規制区間の通過は大きく減点
   // 解析に失敗したルート（二段階右折の数が不明）は少し不利にする
   const score = (r) => r.trip.summary.time
     + (avoidTwo ? (r.analyzed ? 120 * r.twoStage.length : 300) : 0)
+    + +settings.turns * r.turns
     + 1800 * r.hits.filter((h) => h.passes && h.active).length;
   try {
-    const routes = await request([{}]);
+    // 曲がる回数を減らしたいときは「大通りを通しで使う案」も出して比べる
+    const routes = await request(+settings.turns ? [{}, { use_primary: 0.9, maneuver_penalty: 120 }] : [{}]);
     if (!routes.length) throw new Error('no route');
     if (my !== planSeq) return;
     candidates = pick(routes);
@@ -825,11 +843,13 @@ function prepareTrip(trip) {
     offset += shape.length;
     return L;
   });
-  return { trip, legs, shape: legs.flatMap((l) => l.shape), structure: [], hits: [], twoStage: [] };
+  const turns = legs.reduce((n, L) => n + L.maneuvers.filter((m) => TURNS.has(m.type)).length, 0);
+  return { trip, legs, shape: legs.flatMap((l) => l.shape), structure: [], hits: [], twoStage: [], turns };
 }
 
 // ===== 原付向け解析 =====
 const RIGHT_TURNS = new Set([10, 11]); // 右折・鋭角右折
+const TURNS = new Set([10, 11, 12, 13, 14, 15]); // 右左折・Uターン（「斜め」と分岐は数えない）
 
 const traceCache = new Map();
 async function analyze(route) {
@@ -957,14 +977,14 @@ map.on('mouseleave', 'alts', () => (map.getCanvas().style.cursor = ''));
 function renderSheet(sel) {
   const s = current.trip.summary;
   $('#alts').replaceChildren(...(candidates.length > 1 ? candidates.map((c, j) => {
-    const b = el('button', { className: j === sel ? 'sel' : '', textContent: `ルート${j + 1}  ${fmtTime(c.trip.summary.time)}${settings.vehicle === '1' ? `・二段階${c.analyzed ? c.twoStage.length : '?'}` : ''}` });
+    const b = el('button', { className: j === sel ? 'sel' : '', textContent: `ルート${j + 1}  ${fmtTime(c.trip.summary.time)}・曲がる${c.turns}回${settings.vehicle === '1' ? `・二段階${c.analyzed ? c.twoStage.length : '?'}` : ''}` });
     b.onclick = () => selectRoute(j, false);
     return b;
   }) : []));
   // ルートの終点が目的地から離れている = 原付で入れない場所。残りは歩き
   const end = current.shape.at(-1);
   const walk = places.to ? haversine(end, [places.to.lat, places.to.lon]) : 0;
-  $('#summary').innerHTML = `${fmtTime(s.time)}<small>${fmtDist(s.length * 1000)} ・ ${settings.speed}km/h想定</small>`
+  $('#summary').innerHTML = `${fmtTime(s.time)}<small>${fmtDist(s.length * 1000)} ・ 曲がる${current.turns}回 ・ ${settings.speed}km/h想定</small>`
     + (walk > 40 ? `<div class="walk">🚶 原付を停めて目的地まで徒歩 約${fmtDist(walk)}（直線）${places.to?.publicOnly ? '<br><small>この先は管理用の道・林道で、一般車両は入れないことが多いため</small>' : ''}</div>` : '');
 
   const w = [];
