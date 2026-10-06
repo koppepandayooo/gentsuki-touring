@@ -276,6 +276,8 @@ function matchSpots(q) {
 }
 
 function setPlace(slot, place, input) {
+  // 履歴やマイスポットの元データを、ピンのドラッグなどで書き換えないようにコピーして持つ
+  place = place && { ...place };
   if (slot === 'from') places.from = place;
   else if (slot === 'to') places.to = place;
   else places.vias[slot] = place;
@@ -305,7 +307,7 @@ function drawPins() {
 
 function addViaField(place) {
   const i = places.vias.length;
-  places.vias.push(place || null);
+  places.vias.push(place ? { ...place } : null);
   const input = el('input', { placeholder: '経由地を検索', autocomplete: 'off' });
   const rm = el('button', { className: 'rm', type: 'button', textContent: '✕', ariaLabel: '経由地を削除' });
   const row = el('div', { className: 'field' }, el('span', { className: 'dot via' }), input, rm);
@@ -345,7 +347,7 @@ function placeKind(key, value) {
 async function searchPlaces(q, opts = {}) {
   const c = map.getCenter();
   const bias = me || { lat: c.lat, lon: c.lng };
-  const photonQuery = (query, extra = '', suffix = '') => fetch(`${PHOTON}?q=${encodeURIComponent(query)}&limit=7&lat=${bias.lat}&lon=${bias.lon}&bbox=122,20,154,46${extra}`)
+  const photonQuery = (query, extra = '', suffix = '') => fetch(`${PHOTON}?q=${encodeURIComponent(query)}&limit=7&lang=default&lat=${bias.lat}&lon=${bias.lon}&bbox=122,20,154,46${extra}`)
     .then((r) => r.json())
     .then((j) => j.features.map((f) => {
       const p = f.properties;
