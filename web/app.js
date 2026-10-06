@@ -116,15 +116,13 @@ function nightify(style) {
 const styleCache = {};
 const JA_NAME = ['coalesce', ['get', 'name:ja'], ['get', 'name']];
 // 道路の正式名 → 通称（例: 八王子五日市線 → 秋川街道）
-// 手で決めた表(road-names.json)を優先し、それ以外は地図データの alt_name を Nominatim で調べて端末に覚えておく
-let roadAliases = {};
-const roadAliasesReady = fetch('data/road-names.json').then((r) => r.json()).then((j) => (roadAliases = j.aliases)).catch(() => {});
+// 地図データの alt_name を Nominatim で調べて端末に覚えておく
 const aliasCache = load('roadAliasCache', {}); // 正式名 → 通称（通称なしは ''）
 const myRoadNames = load('myRoadNames', {});   // 自分で付けた呼び名（いちばん優先）
 const allAliases = () => {
   const out = {};
   for (const [k, v] of Object.entries(aliasCache)) if (v) out[k] = v;
-  return Object.assign(out, roadAliases, myRoadNames);
+  return Object.assign(out, myRoadNames);
 };
 function roadNameExpr() {
   const pairs = Object.entries(allAliases()).flat();
@@ -138,7 +136,7 @@ const aliasQueue = new Map();
 let aliasBusy = false;
 // 「〜線」で終わる名前（都道・県道の正式名）だけ調べる
 function requestAlias(name, near) {
-  if (!name || !/線$/.test(name) || name in aliasCache || name in roadAliases || name in myRoadNames || aliasQueue.has(name)) return;
+  if (!name || !/線$/.test(name) || name in aliasCache || name in myRoadNames || aliasQueue.has(name)) return;
   aliasQueue.set(name, near);
   pumpAliases();
 }
@@ -186,7 +184,6 @@ async function loadBaseStyle() {
   const name = isDark() ? 'night' : 'day';
   const my = ++baseStyleSeq;
   if (!styleCache[name]) {
-    await roadAliasesReady;
     const style = await fetch('https://tiles.openfreemap.org/styles/liberty').then((r) => r.json());
     // 店などのアイコンと 3D の建物は消す（走行中に見やすいように）
     style.layers = style.layers.filter((l) => !/^poi_r/.test(l.id) && l.type !== 'fill-extrusion');
