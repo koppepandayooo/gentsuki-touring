@@ -1,6 +1,6 @@
 // アプリ本体はネット優先・オフライン時のみキャッシュ。地図タイルやAPIは触らない。
-const CACHE = 'gt-v3';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'data/regulations.json', 'data/spots.json', 'data/road-names.json', 'manifest.webmanifest', 'icon.svg'];
+const CACHE = 'gt-v4';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'data/regulations.json', 'data/road-names.json', 'manifest.webmanifest', 'icon.svg'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', (e) => {

@@ -266,20 +266,16 @@ $('#btn-locate').onclick = () => { if (me) flyTo([me.lat, me.lon], 16); else toa
 // place: {lat, lon, name} / from が null の場合は現在地
 const places = { from: null, vias: [], to: null };
 const recent = load('recent', []);
-// マイスポット（長押しで名前を付けて保存）と、地図データの名前ずれを直す補正データ
+// マイスポット（長押しで名前を付けて保存）
 const mySpots = load('myspots', []);
-let fixSpots = [];
-fetch('data/spots.json').then((r) => r.json()).then((j) => (fixSpots = j.spots)).catch(() => {});
 const normName = (t) => t.normalize('NFKC').replace(/\s/g, '').toLowerCase();
 function matchSpots(q) {
   const n = normName(q);
   const hit = (sp) => [sp.name, ...(sp.aliases || [])].some((a) => normName(a).includes(n) || (n.length >= 3 && n.includes(normName(a))));
   // 名前が入力にぴったりのものを先に
   const exact = (sp) => [sp.name, ...(sp.aliases || [])].some((a) => normName(a) === n) ? 0 : 1;
-  return [
-    ...mySpots.filter(hit).map((sp) => ({ ...sp, detail: 'マイスポット' + (sp.detail ? '・' + sp.detail : ''), spot: true })),
-    ...fixSpots.filter(hit).map((sp) => ({ ...sp, spot: true })),
-  ].sort((a, b) => exact(a) - exact(b));
+  return mySpots.filter(hit).map((sp) => ({ ...sp, detail: 'マイスポット' + (sp.detail ? '・' + sp.detail : ''), spot: true }))
+    .sort((a, b) => exact(a) - exact(b));
 }
 
 function setPlace(slot, place, input) {
@@ -380,7 +376,7 @@ async function searchPlaces(q, opts = {}) {
     .catch(() => []);
   const [a, b] = await Promise.all([photon, gsi]);
   const spots = opts.noFallback ? [] : matchSpots(q);
-  // 補正データと同じ場所を指す検索結果は消す（名前ずれの元データ）
+  // マイスポットと同じ場所を指す検索結果は消す（名前ずれの元データ）
   const notNearSpot = (p) => !spots.some((sp) => haversine([sp.lat, sp.lon], [p.lat, p.lon]) < 80);
   // 住所っぽい入力なら地理院を優先
   const addressLike = /[都道府県市区町村丁目番]/.test(q) && /\d|[一二三四五六七八九十]丁目/.test(q);
