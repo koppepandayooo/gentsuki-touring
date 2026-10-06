@@ -172,12 +172,12 @@ function applyAliases() {
   for (const c of candidates) for (const L of c.legs) L.maneuvers.forEach(cleanManeuver);
   if (current) renderSheet(candidates.indexOf(current));
 }
-// 画面に出ている道路名も調べる
-map.on('moveend', () => {
+// 画面に出ている道路名も調べる（moveend の時点では文字がまだ描かれていないことがあるので、描き終わった idle で）
+map.on('idle', () => {
   if (map.getZoom() < 12 || !map.getStyle()) return;
   const c = map.getCenter();
   const names = new Set(map.queryRenderedFeatures().filter((f) => /^highway-name/.test(f.layer.id)).map((f) => f.properties['name:ja'] || f.properties.name));
-  [...names].slice(0, 10).forEach((n) => requestAlias(n, [c.lat, c.lng]));
+  [...names].filter((n) => n && /線$/.test(n)).slice(0, 10).forEach((n) => requestAlias(n, [c.lat, c.lng]));
 });
 let baseStyleSeq = 0;
 async function loadBaseStyle() {
@@ -368,8 +368,10 @@ async function searchPlaces(q, opts = {}) {
     .then((r) => r.json())
     .then((j) => j.slice(0, 4).map((f, i) => {
       const title = f.properties.title;
-      // 地理院の住所検索は「〜番」までしか返さない（号は捨てられる）。入力のほうが細かければ入力のまま表示する
-      const finer = i === 0 && /\d+\s*号|\d+\s*[-−ー－]\s*\d+\s*[-−ー－]\s*\d+|\d+番\s*\d+/.test(q.normalize('NFKC'));
+      // 地理院の住所検索は「〜番」「〜番地」までしか返さない（号・枝番は捨てられる）。
+      // 入力のほうが数字が多い（細かい）ときは、入力した住所のまま表示する
+      const nums = (t) => (t.normalize('NFKC').match(/\d+|[一二三四五六七八九十]+丁目/g) || []).length;
+      const finer = i === 0 && nums(q) > nums(title);
       return { name: finer ? q.trim() : title, detail: finer ? `住所・${title}の位置（ピンをドラッグで調整できます）` : '住所', lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] };
     }))
     .catch(() => []);
@@ -704,6 +706,8 @@ function routeRequest(locs, exclude, variant = {}) {
     // 原付で入れない目的地（歩行者用トンネルなど）は、トンネルの中ではなく一番近い外の道まで
     locations: locs.map((p, i) => ({
       lat: p.lat, lon: p.lon, type: 'break',
+      // 走っている向き（再検索のとき）。この向きに進める道から始めて、いきなり U ターンさせない
+      ...(i === 0 && p.heading != null ? { heading: Math.round(p.heading), heading_tolerance: 45 } : {}),
       ...(i > 0 && (p.noVehicle || p.publicOnly) ? { search_filter: { exclude_tunnel: !!p.noVehicle, ...(p.publicOnly ? { min_road_class: 'residential' } : {}) } } : {}),
     })),
     costing: 'motor_scooter',
@@ -1045,7 +1049,7 @@ $('#btn-steps').onclick = () => {
 };
 
 // ===== ナビ =====
-const nav = { on: false, legIdx: 0, mIdx: 0, lastIdx: 0, offCount: 0, spoken: new Set(), wake: null, rerouting: false };
+const nav = { on: false, legIdx: 0, mIdx: 0, lastIdx: 0, offCount: 0, spoken: new Set(), wake: null, rerouting: false, retryAt: 0, fails: 0, paused: '', prevPt: null };
 
 function speak(text) {
   if (!settings.voice || !('speechSynthesis' in window) || !text) return;
@@ -1059,7 +1063,7 @@ $('#btn-nav').onclick = async () => {
   // 出発地を入力したときはそのルートのまま。今いる場所がルートから離れていれば、ルートに乗るまで案内を待つ
   const startPt = current.legs[0].shape[0];
   const waitJoin = !!places.from && haversine([me.lat, me.lon], startPt) > 60;
-  Object.assign(nav, { on: true, legIdx: 0, mIdx: 0, lastIdx: 0, offCount: 0, spoken: new Set(), waitJoin });
+  Object.assign(nav, { on: true, legIdx: 0, mIdx: 0, lastIdx: 0, offCount: 0, spoken: new Set(), waitJoin, retryAt: 0, fails: 0, paused: '', prevPt: null });
   document.body.classList.add('navigating');
   $('#nav-top').hidden = $('#nav-bottom').hidden = false;
   try { nav.wake = await navigator.wakeLock?.request('screen'); } catch {}
@@ -1113,9 +1117,17 @@ function navUpdate(p) {
     nav.lastIdx = near.i;
     speak('ルートに乗りました。案内を始めます');
   }
+  // 走っている向き: GPS の向き（ある程度速いとき）か、15m 以上動いた前の位置からの向き
+  if (!nav.prevPt || haversine(nav.prevPt, pt) > 15) {
+    if (nav.prevPt) nav.heading = (bearing(nav.prevPt, pt) + 360) % 360;
+    nav.prevPt = pt;
+  }
+  if (p.heading != null && !isNaN(p.heading) && (p.speed ?? 0) > 2) nav.heading = p.heading;
   if (near.d > 50 && (p.acc ?? 0) < 60) {
-    if (++nav.offCount >= 3 && !nav.rerouting) reroute(p);
-  } else nav.offCount = 0;
+    // 電波がないときは再検索しない（元のルートのまま案内を続け、電波が戻ったら再開）
+    if (!navigator.onLine) nav.paused = '📵 電波がないので再検索を止めています。元のルートで案内中';
+    else if (++nav.offCount >= 3 && !nav.rerouting && Date.now() >= nav.retryAt) reroute(p);
+  } else { nav.offCount = 0; nav.paused = ''; }
   nav.lastIdx = near.i;
   const along = L.cum[near.i] + near.t * (L.cum[near.i + 1] - L.cum[near.i] || 0);
 
@@ -1129,7 +1141,7 @@ function navUpdate(p) {
   $('#nav-text').textContent = next.instruction;
   const two = next.flags.includes('two-stage') ? '⚠ 二段階右折の可能性' : '';
   const regAhead = current.hits.find((h) => h.passes && h.active && h.idx > near.i && h.idx - near.i < 200);
-  $('#nav-warn').textContent = [two, regAhead ? '⛔ この先 原付通行規制区間' : ''].filter(Boolean).join(' / ');
+  $('#nav-warn').textContent = [nav.paused, two, regAhead ? '⛔ この先 原付通行規制区間' : ''].filter(Boolean).join(' / ');
 
   const key = `${nav.legIdx}-${nav.mIdx + 1}`;
   if (dNext < 300 && dNext > 80 && !nav.spoken.has(key + 'a')) {
@@ -1169,10 +1181,19 @@ async function reroute(p) {
   toast('ルートを再検索中…');
   speak('ルートを再検索します');
   const remainingVias = places.vias.filter(Boolean).slice(nav.legIdx);
-  const r = await planRoute({ start: { lat: p.lat, lon: p.lon, name: '現在地' }, remainingVias, quiet: true, keepView: true });
-  if (r) Object.assign(nav, { legIdx: 0, mIdx: 0, lastIdx: 0, offCount: 0, spoken: new Set() });
+  const r = await planRoute({ start: { lat: p.lat, lon: p.lon, name: '現在地', heading: nav.heading }, remainingVias, quiet: true, keepView: true });
+  if (r) Object.assign(nav, { legIdx: 0, mIdx: 0, lastIdx: 0, offCount: 0, spoken: new Set(), fails: 0, retryAt: 0, paused: '' });
+  else {
+    // 失敗（電波が弱いなど）: 連打しないよう 15秒 → 30秒 → 60秒… と間をあけて、それまでは元のルートで案内
+    nav.fails++;
+    nav.retryAt = Date.now() + Math.min(15000 * 2 ** (nav.fails - 1), 120000);
+    nav.paused = '📵 再検索できませんでした。元のルートで案内中（少ししてからもう一度試します）';
+    if (nav.fails === 1) speak('再検索できませんでした。電波の良い場所で、もう一度試します');
+  }
   nav.rerouting = false;
 }
+// 電波が戻ったら、すぐ再検索できるようにする
+addEventListener('online', () => { nav.retryAt = 0; nav.fails = 0; nav.paused = ''; });
 
 // ===== スマホに送る（QR） =====
 // パソコンで決めた地点・設定を URL（#r=…）に詰めて QR コードにする。アカウントもサーバーも不要。
