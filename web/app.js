@@ -116,15 +116,13 @@ function nightify(style) {
 const styleCache = {};
 const JA_NAME = ['coalesce', ['get', 'name:ja'], ['get', 'name']];
 // 道路の正式名 → 通称（例: 八王子五日市線 → 秋川街道）
-// 手で決めた表(road-names.json)を優先し、それ以外は地図データの alt_name を Nominatim で調べて端末に覚えておく
-let roadAliases = {};
-const roadAliasesReady = fetch('data/road-names.json').then((r) => r.json()).then((j) => (roadAliases = j.aliases)).catch(() => {});
+// 地図データの alt_name を Nominatim で調べて端末に覚えておく
 const aliasCache = load('roadAliasCache', {}); // 正式名 → 通称（通称なしは ''）
 const myRoadNames = load('myRoadNames', {});   // 自分で付けた呼び名（いちばん優先）
 const allAliases = () => {
   const out = {};
   for (const [k, v] of Object.entries(aliasCache)) if (v) out[k] = v;
-  return Object.assign(out, roadAliases, myRoadNames);
+  return Object.assign(out, myRoadNames);
 };
 function roadNameExpr() {
   const pairs = Object.entries(allAliases()).flat();
@@ -138,7 +136,7 @@ const aliasQueue = new Map();
 let aliasBusy = false;
 // 「〜線」で終わる名前（都道・県道の正式名）だけ調べる
 function requestAlias(name, near) {
-  if (!name || !/線$/.test(name) || name in aliasCache || name in roadAliases || name in myRoadNames || aliasQueue.has(name)) return;
+  if (!name || !/線$/.test(name) || name in aliasCache || name in myRoadNames || aliasQueue.has(name)) return;
   aliasQueue.set(name, near);
   pumpAliases();
 }
@@ -186,7 +184,6 @@ async function loadBaseStyle() {
   const name = isDark() ? 'night' : 'day';
   const my = ++baseStyleSeq;
   if (!styleCache[name]) {
-    await roadAliasesReady;
     const style = await fetch('https://tiles.openfreemap.org/styles/liberty').then((r) => r.json());
     // 店などのアイコンと 3D の建物は消す（走行中に見やすいように）
     style.layers = style.layers.filter((l) => !/^poi_r/.test(l.id) && l.type !== 'fill-extrusion');
@@ -266,23 +263,21 @@ $('#btn-locate').onclick = () => { if (me) flyTo([me.lat, me.lon], 16); else toa
 // place: {lat, lon, name} / from が null の場合は現在地
 const places = { from: null, vias: [], to: null };
 const recent = load('recent', []);
-// マイスポット（長押しで名前を付けて保存）と、地図データの名前ずれを直す補正データ
+// マイスポット（長押しで名前を付けて保存）
 const mySpots = load('myspots', []);
-let fixSpots = [];
-fetch('data/spots.json').then((r) => r.json()).then((j) => (fixSpots = j.spots)).catch(() => {});
 const normName = (t) => t.normalize('NFKC').replace(/\s/g, '').toLowerCase();
 function matchSpots(q) {
   const n = normName(q);
   const hit = (sp) => [sp.name, ...(sp.aliases || [])].some((a) => normName(a).includes(n) || (n.length >= 3 && n.includes(normName(a))));
   // 名前が入力にぴったりのものを先に
   const exact = (sp) => [sp.name, ...(sp.aliases || [])].some((a) => normName(a) === n) ? 0 : 1;
-  return [
-    ...mySpots.filter(hit).map((sp) => ({ ...sp, detail: 'マイスポット' + (sp.detail ? '・' + sp.detail : ''), spot: true })),
-    ...fixSpots.filter(hit).map((sp) => ({ ...sp, spot: true })),
-  ].sort((a, b) => exact(a) - exact(b));
+  return mySpots.filter(hit).map((sp) => ({ ...sp, detail: 'マイスポット' + (sp.detail ? '・' + sp.detail : ''), spot: true }))
+    .sort((a, b) => exact(a) - exact(b));
 }
 
 function setPlace(slot, place, input) {
+  // 履歴やマイスポットの元データを、ピンのドラッグなどで書き換えないようにコピーして持つ
+  place = place && { ...place };
   if (slot === 'from') places.from = place;
   else if (slot === 'to') places.to = place;
   else places.vias[slot] = place;
@@ -312,7 +307,7 @@ function drawPins() {
 
 function addViaField(place) {
   const i = places.vias.length;
-  places.vias.push(place || null);
+  places.vias.push(place ? { ...place } : null);
   const input = el('input', { placeholder: '経由地を検索', autocomplete: 'off' });
   const rm = el('button', { className: 'rm', type: 'button', textContent: '✕', ariaLabel: '経由地を削除' });
   const row = el('div', { className: 'field' }, el('span', { className: 'dot via' }), input, rm);
@@ -352,7 +347,7 @@ function placeKind(key, value) {
 async function searchPlaces(q, opts = {}) {
   const c = map.getCenter();
   const bias = me || { lat: c.lat, lon: c.lng };
-  const photonQuery = (query, extra = '', suffix = '') => fetch(`${PHOTON}?q=${encodeURIComponent(query)}&limit=7&lat=${bias.lat}&lon=${bias.lon}&bbox=122,20,154,46${extra}`)
+  const photonQuery = (query, extra = '', suffix = '') => fetch(`${PHOTON}?q=${encodeURIComponent(query)}&limit=7&lang=default&lat=${bias.lat}&lon=${bias.lon}&bbox=122,20,154,46${extra}`)
     .then((r) => r.json())
     .then((j) => j.features.map((f) => {
       const p = f.properties;
@@ -380,7 +375,7 @@ async function searchPlaces(q, opts = {}) {
     .catch(() => []);
   const [a, b] = await Promise.all([photon, gsi]);
   const spots = opts.noFallback ? [] : matchSpots(q);
-  // 補正データと同じ場所を指す検索結果は消す（名前ずれの元データ）
+  // マイスポットと同じ場所を指す検索結果は消す（名前ずれの元データ）
   const notNearSpot = (p) => !spots.some((sp) => haversine([sp.lat, sp.lon], [p.lat, p.lon]) < 80);
   // 住所っぽい入力なら地理院を優先
   const addressLike = /[都道府県市区町村丁目番]/.test(q) && /\d|[一二三四五六七八九十]丁目/.test(q);
