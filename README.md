@@ -31,7 +31,7 @@ python tools/scrape_jmpsa.py
 ```
 python -m http.server 8810 --directory web
 ```
-スマホでGPSを使うには HTTPS で公開する必要がある（GitHub Pages / Cloudflare Pages など）。
+公開版: https://koppepandayooo.github.io/gentsuki-touring/ （main に push すると GitHub Actions で web/ が自動公開される）
 
 ## 使っている無料サービス
 - ルート: valhalla1.openstreetmap.de（FOSSGIS の公開サーバー。個人利用の範囲で）
