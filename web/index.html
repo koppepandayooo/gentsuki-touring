@@ -9,7 +9,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=34">
+<link rel="stylesheet" href="style.css?v=35">
 </head>
 <body>
 <div id="map"></div>
@@ -121,8 +121,18 @@
         <option value="device">端末の声</option>
       </select>
     </label>
-    <p class="note">ルート: Valhalla / OpenStreetMap ・ 地図: OpenFreeMap / OpenStreetMap ・ 規制区間: 日本二輪車普及安全協会（<span id="reg-date"></span>取得） ・ 音声: VOICEVOX:ずんだもん。<br>実際の標識・交通規則を優先してください。</p>
+    <p class="note"><b>ベータ版（試作中）</b>：実際の道でのテストはまだ少ないので、案内が間違っていることがあります。<br>ルート: Valhalla / OpenStreetMap ・ 地図: OpenFreeMap / OpenStreetMap ・ 規制区間: 日本二輪車普及安全協会（<span id="reg-date"></span>取得） ・ 音声: VOICEVOX:ずんだもん。<br>実際の標識・交通規則を優先してください。</p>
     <button class="primary" value="ok">閉じる</button>
+  </form>
+</dialog>
+
+<!-- 初めて開いたときに 1 回だけ出すお知らせ -->
+<dialog id="beta">
+  <form method="dialog">
+    <h2>ベータ版です</h2>
+    <p>このアプリは試作中で、実際の道でのテスト走行はまだほとんどしていません。ルートや二段階右折・規制区間の判定、ナビの案内が間違っていることがあります。</p>
+    <p><b>走行中はスマホを操作せず、実際の標識と交通ルールを必ず優先してください。</b></p>
+    <button class="primary" value="ok">わかりました</button>
   </form>
 </dialog>
 
@@ -140,6 +150,6 @@
 <div id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="app.js?v=34"></script>
+<script src="app.js?v=35"></script>
 </body>
 </html>

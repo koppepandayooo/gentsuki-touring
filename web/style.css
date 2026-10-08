@@ -166,3 +166,4 @@ dialog .share-row button { width: auto; }
 .maplibregl-ctrl-top-right { top: 6px; right: 6px; }
 :root[data-theme=dark] .maplibregl-ctrl-group { background: var(--bg); }
 :root[data-theme=dark] .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(1); }
+dialog p { font-size: 14px; line-height: 1.6; margin: 0 0 12px; }
