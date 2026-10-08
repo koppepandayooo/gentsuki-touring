@@ -9,7 +9,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=33">
+<link rel="stylesheet" href="style.css?v=34">
 </head>
 <body>
 <div id="map"></div>
@@ -113,8 +113,9 @@
     </label>
     <label class="check"><input type="checkbox" name="avoidTwoStage"> 二段階右折が少ないルートを優先（原付一種）</label>
     <label class="check"><input type="checkbox" name="avoidReg"> 二輪通行規制区間を自動で避ける</label>
-    <label class="check"><input type="checkbox" name="voice"> 音声案内</label>
-    <label>案内の声
+    <!-- 音声はナビ（スマホ）だけなので、パソコンでは出さない -->
+    <label class="check touch-only"><input type="checkbox" name="voice"> 音声案内</label>
+    <label class="touch-only">案内の声
       <select name="voiceType">
         <option value="zundamon">ずんだもん（決まった案内だけ。道路名などは端末の声）</option>
         <option value="device">端末の声</option>
@@ -139,6 +140,6 @@
 <div id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="app.js?v=33"></script>
+<script src="app.js?v=34"></script>
 </body>
 </html>
