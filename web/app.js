@@ -1354,5 +1354,11 @@ $('#btn-mute').textContent = settings.voice ? '🔊' : '🔇';
 
 receiveShared();
 
+// ベータ版のお知らせ（初めて開いたときだけ）
+if (!load('betaNoticeSeen', false)) {
+  $('#beta').showModal();
+  $('#beta').addEventListener('close', () => save('betaNoticeSeen', true), { once: true });
+}
+
 // ===== PWA =====
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
