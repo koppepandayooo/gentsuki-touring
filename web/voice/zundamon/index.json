@@ -142,5 +142,9 @@
  "rerouteFail": {
   "file": "rerouteFail.mp3",
   "text": "電波が悪くて探し直せないのだ。少ししたらもう一回やってみるのだ"
+ },
+ "rerouteNoPath": {
+  "file": "rerouteNoPath.mp3",
+  "text": "ここからだと道が見つからないのだ。少し進んだらもう一回探すのだ"
  }
 }

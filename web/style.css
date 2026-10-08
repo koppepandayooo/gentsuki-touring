@@ -151,7 +151,7 @@ a.sv { color: #1e88e5; text-decoration: none; font-weight: 600; }
 
 /* ナビはスマホ（タッチ操作の端末）だけ。パソコンはルートを調べる用 */
 @media (hover: hover) and (pointer: fine) {
-  #btn-nav { display: none; }
+  #btn-nav, dialog .touch-only { display: none; }
 }
 /* 「スマホに送る」はパソコンだけ */
 @media not ((hover: hover) and (pointer: fine)) {
