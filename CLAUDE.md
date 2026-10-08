@@ -15,6 +15,7 @@
 | `web/style.css` | 見た目。ダークは `:root[data-theme=dark]`（JS がテーマを決めて付ける） |
 | `web/sw.js` | Service Worker。アプリ本体はネット優先・オフライン時だけキャッシュ |
 | `web/data/regulations.json` | 二輪通行規制区間（日本二輪車普及安全協会のデータ、476 件） |
+| `web/voice/phrases.json` / `web/voice/zundamon/` | ずんだもんの決まり文句と音声（MP3 と `index.json`）。`tools/make_voice.py` が VOICEVOX エンジン（127.0.0.1:50021、話者 3 = ずんだもんノーマル）で作る |
 | `tools/scrape_jmpsa.py` | 規制区間データの取得。協会は毎年 6 月に更新するので、その後に再実行 |
 
 ローカルで動かす: `python -m http.server 8810 --directory web` → http://localhost:8810
@@ -38,8 +39,10 @@
 3. **入れない目的地**: 歩行者用の道（`noVehicle`）や、手前が長い管理用道路・林道（`serviceTail > 0.7km` → `publicOnly`）は一般道の終わりまで案内して「徒歩 約○m」を表示
 4. **パソコンとスマホ**: ナビ開始ボタンはタッチ端末だけ（CSS の `(hover: hover) and (pointer: fine)` で隠す）。パソコンの現在地は誤差が大きい（500m 超）ので出発地に使わない
 5. **ナビ**: 進行方向が上・斜めから見た地図、日本語音声（Valhalla の案内文からローマ字と道路番号を消し、通称に置き換える）、ルート外れ（50m 以上が 3 回）で再検索。再検索では走っている向きを `heading` で渡して、いきなり U ターンさせない。電波がない（`navigator.onLine` が false）ときは再検索を止めて元のルートで案内し、失敗したら 15 秒→30 秒…と間をあける（`online` で再開）。出発地を入力したときはそのルートのまま、ルートに乗るまで「出発地点まで」の表示で待つ
-6. **スマホに送る**: 地点と設定を URL の `#r=` に詰めて（deflate＋base64url）QR コードに。スマホは `receiveShared()` で読んで同じ条件で再検索し、距離と曲がる回数が近い候補を選ぶ。QR は qrcode-generator を CDN から必要なときだけ読む
-7. **曲がる回数**: `TURNS`（右左折・U ターン）を数え、設定 `turns`（秒/回）を点数に足す。0 以外なら `use_primary: 0.9, maneuver_penalty: 120` の案も出す（Valhalla の設定だけでは回数はほぼ減らない）
+6. **ずんだもんの声**: `speak(text, ids)`。ids の音声が全部あればずんだもんの音声をつないで流し（Web Audio）、なければ text を端末の声で読む。道路名などは入れない（決まり文句だけ）。音を出す準備 `unlockVoice()` はナビ開始のタップ直後（await より前）に呼ぶ。設定画面に「VOICEVOX:ずんだもん」の表記が必要（利用規約）
+   - クラウドの作業環境でも VOICEVOX エンジンは動かせる: GitHub のリリース（`voicevox_engine-linux-cpu-x64-<版>.7z.001`）は直接ダウンロードでき、py7zr で展開して `./run` で起動
+7. **スマホに送る**: 地点と設定を URL の `#r=` に詰めて（deflate＋base64url）QR コードに。スマホは `receiveShared()` で読んで同じ条件で再検索し、距離と曲がる回数が近い候補を選ぶ。QR は qrcode-generator を CDN から必要なときだけ読む
+8. **曲がる回数**: `TURNS`（右左折・U ターン）を数え、設定 `turns`（秒/回）を点数に足す。0 以外なら `use_primary: 0.9, maneuver_penalty: 120` の案も出す（Valhalla の設定だけでは回数はほぼ減らない）
 
 ## ユーザーの好み・これまでの判断
 
