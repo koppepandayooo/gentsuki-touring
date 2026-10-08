@@ -822,6 +822,7 @@ async function planRoute(opts = {}) {
     }
     return candidates[0];
   } catch (e) {
+    planRoute.lastError = e; // ナビの再検索で、電波のせいか道が見つからないのかを見分けるため
     if (my !== planSeq) return;
     toast('ルートが見つかりません: ' + e.message, 5000);
   }
@@ -1225,14 +1226,22 @@ async function reroute(p) {
   toast('ルートを再検索中…');
   speak('ルートを再検索します', ['reroute']);
   const remainingVias = places.vias.filter(Boolean).slice(nav.legIdx);
+  planRoute.lastError = null;
   const r = await planRoute({ start: { lat: p.lat, lon: p.lon, name: '現在地', heading: nav.heading }, remainingVias, quiet: true, keepView: true });
   if (r) Object.assign(nav, { legIdx: 0, mIdx: 0, lastIdx: 0, offCount: 0, spoken: new Set(), fails: 0, retryAt: 0, paused: '' });
   else {
     // 失敗（電波が弱いなど）: 連打しないよう 15秒 → 30秒 → 60秒… と間をあけて、それまでは元のルートで案内
     nav.fails++;
     nav.retryAt = Date.now() + Math.min(15000 * 2 ** (nav.fails - 1), 120000);
-    nav.paused = '📵 再検索できませんでした。元のルートで案内中（少ししてからもう一度試します）';
-    if (nav.fails === 1) speak('再検索できませんでした。電波の良い場所で、もう一度試します', ['rerouteFail']);
+    // Valhalla が「道が見つからない」と答えた（原付で入れない道にいるなど）のか、電波のせいで届かなかったのか
+    const noPath = navigator.onLine && planRoute.lastError?.fatal;
+    if (noPath) {
+      nav.paused = '⚠ この場所からのルートが見つかりません。元のルートで案内中（少し進んでからもう一度試します）';
+      if (nav.fails === 1) speak('この場所からはルートが見つかりません。少し進んでからもう一度試します', ['rerouteNoPath']);
+    } else {
+      nav.paused = '📵 再検索できませんでした。元のルートで案内中（少ししてからもう一度試します）';
+      if (nav.fails === 1) speak('再検索できませんでした。電波の良い場所で、もう一度試します', ['rerouteFail']);
+    }
   }
   nav.rerouting = false;
 }
