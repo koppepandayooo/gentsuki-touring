@@ -7,7 +7,7 @@ const GSI_SEARCH = 'https://msearch.gsi.go.jp/address-search/AddressSearch';
 const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse';
 
 // ===== 設定 =====
-const DEFAULTS = { theme: 'auto', vehicle: '1', speed: 30, primary: '0.5', hills: '0.5', turns: '0', avoidReg: true, avoidTwoStage: true, voice: true, showReg: true };
+const DEFAULTS = { theme: 'auto', vehicle: '1', speed: 30, primary: '0.5', hills: '0.5', turns: '0', avoidReg: true, avoidTwoStage: true, voice: true, voiceType: 'zundamon', showReg: true };
 const settings = Object.assign({}, DEFAULTS, load('settings', {}));
 function load(k, d) { try { return JSON.parse(localStorage.getItem('gt.' + k)) ?? d; } catch { return d; } }
 function save(k, v) { try { localStorage.setItem('gt.' + k, JSON.stringify(v)); } catch {} }
@@ -1051,15 +1051,57 @@ $('#btn-steps').onclick = () => {
 // ===== ナビ =====
 const nav = { on: false, legIdx: 0, mIdx: 0, lastIdx: 0, offCount: 0, spoken: new Set(), wake: null, rerouting: false, retryAt: 0, fails: 0, paused: '', prevPt: null };
 
-function speak(text) {
-  if (!settings.voice || !('speechSynthesis' in window) || !text) return;
+// ===== 音声（ずんだもん / 端末の声） =====
+// 決まり文句は VOICEVOX で作ったずんだもんの音声（web/voice/zundamon/、tools/make_voice.py で作る）をつないで流す。
+// 音声ファイルがない文・道路名が入る文は端末の読み上げ（speechSynthesis）で読む
+const zunda = { ctx: null, index: null, buf: {}, queue: Promise.resolve(), sources: [] };
+fetch('voice/zundamon/index.json').then((r) => r.ok ? r.json() : null).then((j) => (zunda.index = j)).catch(() => {});
+// ナビ開始のタップの中で呼ぶ（スマホはユーザー操作がないと音を出せない）
+function unlockVoice() {
+  if (settings.voiceType !== 'zundamon' || !zunda.index) return;
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {} // iPhone のマナーモードでも鳴らす
+  zunda.ctx ??= new (window.AudioContext || window.webkitAudioContext)();
+  zunda.ctx.resume?.();
+  for (const [id, v] of Object.entries(zunda.index)) {
+    zunda.buf[id] ??= fetch('voice/zundamon/' + v.file).then((r) => r.arrayBuffer())
+      .then((a) => new Promise((res, rej) => zunda.ctx.decodeAudioData(a, res, rej))).catch(() => { delete zunda.buf[id]; return null; });
+  }
+}
+const canZunda = (ids) => settings.voiceType === 'zundamon' && zunda.ctx && ids?.length && ids.every((id) => id && zunda.buf[id]);
+// ids: ずんだもんの音声の並び、text: 音声がないとき端末の声で読む文
+function speak(text, ids) {
+  if (!settings.voice || !text) return;
+  if (canZunda(ids)) {
+    zunda.queue = zunda.queue.then(async () => {
+      for (const id of ids) {
+        const b = await zunda.buf[id];
+        if (!b || !settings.voice) return;
+        await new Promise((res) => {
+          const src = zunda.ctx.createBufferSource();
+          src.buffer = b; src.connect(zunda.ctx.destination);
+          src.onended = () => { zunda.sources = zunda.sources.filter((x) => x !== src); res(); };
+          zunda.sources.push(src); src.start();
+        });
+      }
+    });
+    return;
+  }
+  if (!('speechSynthesis' in window)) return;
   const u = new SpeechSynthesisUtterance(text); u.lang = 'ja-JP'; u.rate = 1.05;
   speechSynthesis.speak(u);
 }
+function stopVoice() {
+  speechSynthesis?.cancel();
+  zunda.sources.forEach((s) => { try { s.stop(); } catch {} });
+  zunda.sources = [];
+}
+// 曲がり角の種類 → ずんだもんの音声（Valhalla の maneuver type）
+const zTurn = (type) => { const id = 't' + (type === 13 ? 12 : type); return zunda.index?.[id] ? id : null; };
 
 $('#btn-nav').onclick = async () => {
   if (!current) return;
   if (!me) return toast('現在地が取れていません');
+  unlockVoice(); // タップの直後（await より前）でないと、スマホは音を出させてくれない
   // 出発地を入力したときはそのルートのまま。今いる場所がルートから離れていれば、ルートに乗るまで案内を待つ
   const startPt = current.legs[0].shape[0];
   const waitJoin = !!places.from && haversine([me.lat, me.lon], startPt) > 60;
@@ -1069,22 +1111,23 @@ $('#btn-nav').onclick = async () => {
   try { nav.wake = await navigator.wakeLock?.request('screen'); } catch {}
   meMarker?.getElement().classList.add('nav');
   const first = current.legs[0].maneuvers[0];
-  if (waitJoin) speak(`出発地点の${places.from.name}まで向かってください`);
-  else speak(first.verbal_pre_transition_instruction || first.instruction);
+  if (waitJoin) speak(`出発地点の${places.from.name}まで向かってください`, ['toStart']);
+  else speak(first.verbal_pre_transition_instruction || first.instruction, ['start']);
   navUpdate(me);
 };
-$('#btn-nav-end').onclick = endNav;
-$('#btn-mute').onclick = () => { settings.voice = !settings.voice; save('settings', settings); $('#btn-mute').textContent = settings.voice ? '🔊' : '🔇'; if (!settings.voice) speechSynthesis.cancel(); };
+$('#btn-nav-end').onclick = () => endNav();
+$('#btn-mute').onclick = () => { settings.voice = !settings.voice; save('settings', settings); $('#btn-mute').textContent = settings.voice ? '🔊' : '🔇'; if (!settings.voice) stopVoice(); };
 document.addEventListener('visibilitychange', async () => {
   if (nav.on && document.visibilityState === 'visible') { try { nav.wake = await navigator.wakeLock?.request('screen'); } catch {} }
 });
 
-function endNav() {
+// keepVoice: 到着のときは「到着しました」を最後まで読ませる
+function endNav(keepVoice = false) {
   nav.on = false;
   document.body.classList.remove('navigating');
   $('#nav-top').hidden = $('#nav-bottom').hidden = true;
   nav.wake?.release?.(); nav.wake = null;
-  speechSynthesis?.cancel();
+  if (!keepVoice) stopVoice();
   meMarker?.getElement().classList.remove('nav');
   meMarker?.setRotation(0);
   map.easeTo({ bearing: 0, pitch: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 600 });
@@ -1115,7 +1158,7 @@ function navUpdate(p) {
     }
     nav.waitJoin = false;
     nav.lastIdx = near.i;
-    speak('ルートに乗りました。案内を始めます');
+    speak('ルートに乗りました。案内を始めます', ['joined']);
   }
   // 走っている向き: GPS の向き（ある程度速いとき）か、15m 以上動いた前の位置からの向き
   if (!nav.prevPt || haversine(nav.prevPt, pt) > 15) {
@@ -1146,11 +1189,12 @@ function navUpdate(p) {
   const key = `${nav.legIdx}-${nav.mIdx + 1}`;
   if (dNext < 300 && dNext > 80 && !nav.spoken.has(key + 'a')) {
     nav.spoken.add(key + 'a');
-    speak(`${Math.round(dNext / 50) * 50}メートル先、${next.verbal_transition_alert_instruction || next.instruction}`);
+    const m = Math.round(dNext / 50) * 50;
+    speak(`${m}メートル先、${next.verbal_transition_alert_instruction || next.instruction}`, [`d${m}`, zTurn(next.type)]);
   }
   if (dNext <= 60 && !nav.spoken.has(key + 'b')) {
     nav.spoken.add(key + 'b');
-    speak((next.verbal_pre_transition_instruction || next.instruction) + (two ? '。二段階右折に注意してください' : ''));
+    speak((next.verbal_pre_transition_instruction || next.instruction) + (two ? '。二段階右折に注意してください' : ''), ['soon', zTurn(next.type), ...(two ? ['twostage'] : [])]);
   }
 
   // 残り
@@ -1163,8 +1207,8 @@ function navUpdate(p) {
   // 経由地・目的地到着
   if (L.cum.at(-1) - along < 30) {
     if (nav.legIdx < current.legs.length - 1) {
-      speak('経由地に到着しました'); nav.legIdx++; nav.mIdx = 0; nav.lastIdx = 0;
-    } else { speak('目的地に到着しました。おつかれさまでした'); toast('到着しました'); endNav(); return; }
+      speak('経由地に到着しました', ['via']); nav.legIdx++; nav.mIdx = 0; nav.lastIdx = 0;
+    } else { speak('目的地に到着しました。おつかれさまでした', ['arrive']); toast('到着しました'); endNav(true); return; }
   }
   // 進行方向を上にして、自分の位置を画面の下寄りに
   let k = near.i + 1;
@@ -1179,7 +1223,7 @@ function navUpdate(p) {
 async function reroute(p) {
   nav.rerouting = true;
   toast('ルートを再検索中…');
-  speak('ルートを再検索します');
+  speak('ルートを再検索します', ['reroute']);
   const remainingVias = places.vias.filter(Boolean).slice(nav.legIdx);
   const r = await planRoute({ start: { lat: p.lat, lon: p.lon, name: '現在地', heading: nav.heading }, remainingVias, quiet: true, keepView: true });
   if (r) Object.assign(nav, { legIdx: 0, mIdx: 0, lastIdx: 0, offCount: 0, spoken: new Set(), fails: 0, retryAt: 0, paused: '' });
@@ -1188,7 +1232,7 @@ async function reroute(p) {
     nav.fails++;
     nav.retryAt = Date.now() + Math.min(15000 * 2 ** (nav.fails - 1), 120000);
     nav.paused = '📵 再検索できませんでした。元のルートで案内中（少ししてからもう一度試します）';
-    if (nav.fails === 1) speak('再検索できませんでした。電波の良い場所で、もう一度試します');
+    if (nav.fails === 1) speak('再検索できませんでした。電波の良い場所で、もう一度試します', ['rerouteFail']);
   }
   nav.rerouting = false;
 }

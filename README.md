@@ -34,6 +34,7 @@
 
 ### ナビ（スマホ・タブレットのみ）
 - 進行方向が上になる地図、次の曲がり角と距離、日本語の音声案内
+- 案内の声は **ずんだもん**（VOICEVOX）。「300メートル先、右に曲がるのだ」などの決まった案内をずんだもんの声で流し、道路名が入る案内などは端末の声で読む。設定で端末の声だけにもできる
 - ルートから外れたら自動で検索し直す（走っている向きを考えて、いきなり U ターンさせない）。電波がないときは元のルートのまま案内
 - 出発地を入力したときはそのルートのまま。ルートに乗るまでは「出発地点まで」と表示して待つ
 - 速度表示（一種は 30km/h を超えると赤）、画面のスリープ防止
@@ -54,7 +55,10 @@
 | `web/style.css` | 見た目 |
 | `web/sw.js` | Service Worker（オフライン時に本体を表示するため） |
 | `web/data/regulations.json` | 二輪通行規制区間のデータ |
+| `web/voice/phrases.json` | ずんだもんに言わせる決まり文句の一覧 |
+| `web/voice/zundamon/` | ずんだもんの音声ファイル（`tools/make_voice.py` で作る） |
 | `tools/scrape_jmpsa.py` | 規制区間データを協会のサイトから取得するスクリプト |
+| `tools/make_voice.py` | VOICEVOX で決まり文句をずんだもんの音声ファイルにするスクリプト |
 | `.github/workflows/pages.yml` | `main` に push すると `web/` を GitHub Pages に公開 |
 
 マイスポット・履歴・設定・調べた道路の通称は、使っている端末のブラウザの中だけに保存されます（どこにも送られません）。
@@ -66,6 +70,14 @@ python -m http.server 8810 --directory web
 ```
 
 http://localhost:8810 を開く。
+
+### ずんだもんの音声を作り直す
+
+`web/voice/phrases.json` の文を変えたら、VOICEVOX を起動した状態で実行します（文が変わったものだけ作り直します。ffmpeg があれば MP3、なければ WAV）。
+
+```
+python tools/make_voice.py
+```
 
 ### 規制区間データの更新
 
@@ -83,6 +95,7 @@ python tools/scrape_jmpsa.py
 | 地図 | [OpenFreeMap](https://openfreemap.org/)（© OpenStreetMap contributors） |
 | 場所の検索 | [Photon](https://photon.komoot.io/)、国土地理院 住所検索、[Nominatim](https://nominatim.org/) |
 | 規制区間 | 一般社団法人日本二輪車普及安全協会「[二輪車通行規制区間情報](https://www.jmpsa.or.jp/society/roadinfo/)」 |
+| 案内の声 | [VOICEVOX](https://voicevox.hiroshiba.jp/):ずんだもん（音声ファイルはリポジトリに入れてある） |
 
 公開サーバーなので、個人で使う範囲にとどめています。
 

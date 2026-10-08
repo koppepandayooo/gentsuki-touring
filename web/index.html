@@ -9,7 +9,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="style.css?v=31">
+<link rel="stylesheet" href="style.css?v=32">
 </head>
 <body>
 <div id="map"></div>
@@ -114,7 +114,13 @@
     <label class="check"><input type="checkbox" name="avoidTwoStage"> 二段階右折が少ないルートを優先（原付一種）</label>
     <label class="check"><input type="checkbox" name="avoidReg"> 二輪通行規制区間を自動で避ける</label>
     <label class="check"><input type="checkbox" name="voice"> 音声案内</label>
-    <p class="note">ルート: Valhalla / OpenStreetMap ・ 地図: OpenFreeMap / OpenStreetMap ・ 規制区間: 日本二輪車普及安全協会（<span id="reg-date"></span>取得）。<br>実際の標識・交通規則を優先してください。</p>
+    <label>案内の声
+      <select name="voiceType">
+        <option value="zundamon">ずんだもん（決まった案内だけ。道路名などは端末の声）</option>
+        <option value="device">端末の声</option>
+      </select>
+    </label>
+    <p class="note">ルート: Valhalla / OpenStreetMap ・ 地図: OpenFreeMap / OpenStreetMap ・ 規制区間: 日本二輪車普及安全協会（<span id="reg-date"></span>取得） ・ 音声: VOICEVOX:ずんだもん。<br>実際の標識・交通規則を優先してください。</p>
     <button class="primary" value="ok">閉じる</button>
   </form>
 </dialog>
@@ -133,6 +139,6 @@
 <div id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="app.js?v=31"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>
